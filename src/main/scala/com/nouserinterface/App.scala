@@ -13,7 +13,6 @@ object App {
   def main(args: Array[String]): Unit = {
     val ctypes = Seq("aml", "breast", "colon", "gbm", "kidney", "liver", "lung", "melanoma", "ovarian", "sarcoma")
     val omics = Seq("exp", "methy", "mirna")
-
     val cnts = ctypes.map(c => {
       val mas = omics.map(o => csvreader(new InputStreamReader(new FileInputStream(s"data/rappoport2018/$c/$o"))))
       //val pats = mas.map(ma => ma.colNames)
@@ -21,20 +20,20 @@ object App {
       var hs = mas.map(ma => DenseMatrix.rand[Double](omics.length, ma.data.cols))
       var w = DenseMatrix.rand[Double](mas(0).data.cols, omics.length)
 
-      def muH(w:DenseMatrix[Double], h:DenseMatrix[Double], x:DenseMatrix[Double]):DenseMatrix[Double] = {
-        h
-      }
+      // def muH(w:DenseMatrix[Double], h:DenseMatrix[Double], x:DenseMatrix[Double]):DenseMatrix[Double] = {
+      //   h
+      // }
 
-      def upd(w: DenseMatrix[Double], hs: Seq[DenseMatrix[Double]], xs:Seq[DenseMatrix[Double]]):(DenseMatrix[Double], Seq[DenseMatrix[Double]])={
-        val nhs = hs.map(h=> muH(w, h, xs(0)))
-        (w,nhs)
-      }
+      // def upd(w: DenseMatrix[Double], hs: Seq[DenseMatrix[Double]], xs:Seq[DenseMatrix[Double]]):(DenseMatrix[Double], Seq[DenseMatrix[Double]])={
+      //   val nhs = hs.map(h=> muH(w, h, xs(0)))
+      //   (w,nhs)
+      // }
 
-      (0 to 500).foreach(i=>3)
+      // (0 to 500).foreach(i=>3)
 
 
     })
-    //println(cnts)
+    println(cnts)
   }
 
   case class DataMa(rowNames: Seq[String], colNames: Seq[String], data: DenseMatrix[Double])

@@ -2,3 +2,8 @@ target/
 dependency-reduced-pom.xml
 data/
 .idea/
+.bloop/
+.metals/
+.vscode/
+.ammonite/
+metals.sbt
