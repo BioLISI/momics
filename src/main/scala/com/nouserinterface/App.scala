@@ -13,6 +13,7 @@ object App {
   def main(args: Array[String]): Unit = {
     val ctypes = Seq("aml", "breast", "colon", "gbm", "kidney", "liver", "lung", "melanoma", "ovarian", "sarcoma")
     val omics = Seq("exp", "methy", "mirna")
+    println(ctypes.mkString(","))
     val cnts = ctypes.map(c => {
       val mas = omics.map(o => csvreader(new InputStreamReader(new FileInputStream(s"data/rappoport2018/$c/$o"))))
       //val pats = mas.map(ma => ma.colNames)
@@ -34,6 +35,8 @@ object App {
 
     })
     println(cnts)
+    println("me!!!")
+
   }
 
   case class DataMa(rowNames: Seq[String], colNames: Seq[String], data: DenseMatrix[Double])
