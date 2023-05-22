@@ -7,3 +7,7 @@ data/
 .vscode/
 .ammonite/
 metals.sbt
+.bsp
+.idea
+project/
+target/
