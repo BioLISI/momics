@@ -6,11 +6,11 @@ name:="momics"
 
 libraryDependencies += "org.scala-lang" % "scala-library" % "2.13.10" % "compile"
  
-libraryDependencies += "org.scalanlp" % "breeze_2.13" % "2.1.0" % "compile"
+//libraryDependencies += "org.scalanlp" % "breeze_2.13" % "2.1.0" % "compile"
  
-libraryDependencies += "org.apache.spark" % "spark-core_2.13" % "3.3.0" % "compile"
+libraryDependencies += "org.apache.spark" % "spark-core_2.13" % "3.4.0" % "compile"
  
-libraryDependencies += "org.apache.spark" % "spark-mllib_2.13" % "3.3.0" % "compile"
+libraryDependencies += "org.apache.spark" % "spark-mllib_2.13" % "3.4.0" % "compile"
  
 libraryDependencies += "junit" % "junit" % "4.13.2" % "test"
  
