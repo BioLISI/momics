@@ -1,10 +1,10 @@
 
-scalaVersion := "2.13.10"
+scalaVersion := "2.13.11"
 organization := "com.nouserinterface"
 
 name:="momics"
 
-libraryDependencies += "org.scala-lang" % "scala-library" % "2.13.10" % "compile"
+libraryDependencies += "org.scala-lang" % "scala-library" % "2.13.11" % "compile"
  
 //libraryDependencies += "org.scalanlp" % "breeze_2.13" % "2.1.0" % "compile"
  
