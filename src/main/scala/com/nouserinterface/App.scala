@@ -56,8 +56,8 @@ object App {
     } else {
       DenseMatrix.tabulate(mat.length - skipLines, mat.head.length - skipCols)((i, j) => mat(i + skipLines)(j + skipCols).toDouble)
     }
-    val rowNames = (0 to mat.length - 1).map(i => mat(i)(0))
-    val colNames = (0 to mat.head.length - 1).map(i => mat(0)(i))
+    val rowNames = if(skipCols>0)mat.indices.map(i => mat(i)(0)) else mat.indices.map(_.toString)
+    val colNames = if(skipLines>0)mat.head.indices.map(i => mat(0)(i)) else mat.head.indices.map(_.toString)
     DataMa(rowNames, colNames, ma)
   }
 

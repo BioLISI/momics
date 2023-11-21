@@ -1,21 +1,72 @@
 package com.nouserinterface
 
+import breeze.io.CSVReader
 import breeze.linalg._
+import breeze.math.Ring.ringFromField
+import breeze.numerics.{exp, log}
 import breeze.stats.distributions._
 import breeze.stats.mean
+import com.nouserinterface.App.{DataMa, csvreader}
 import com.nouserinterface.Distributions._
 import com.nouserinterface.Trainer.FancyIterable
+
+import java.io.{FileInputStream, InputStreamReader}
 
 object AdmixtureModel {
   implicit val rand: RandBasis = RandBasis.systemSeed
 
   def main(args: Array[String]): Unit = {
+    // simulated microsatellite data with 200 diploid individuals from 2 populations;
+    // LABEL=1, POPDATA=1, POPFLAG=1, NUMLOCI=5, PLOIDY=2, MISSING=-999, ONEROWPERIND=0.
+    val mat = CSVReader.read(new InputStreamReader(new FileInputStream(s"data/testdata1.txt")), ' ', '"', '\\')
+    val test = readStructureInput(mat)
+    val xs = str2mat(test)
+    val State(_, pMCMC, qMCMC, alphaMCMC) = AdmixtureModel.runMCMC(xs, 2, 20000, 10000, 1)
+
+    println(qMCMC.toString(500))
+  }
+
+  case class StructureRecord(label: String, population: Int, popFlag: Boolean, genotype: Seq[Int])
+
+  def readStructureInput(data: Seq[Seq[String]], hasLabel: Boolean = true, hasPopData: Boolean = true, hasPopFlag: Boolean = true, numLoci: Int = 5, ploidy: Int = 2, missing: Int = -999, oneRowPerInd: Boolean = false): Seq[StructureRecord] = {
+    def intersperse[A](a: List[A]*): List[A] = a.head match {
+      case first :: rest => first :: intersperse[A](a.tail :+ rest: _*)
+      case _ => if (a.tail.size == 1) a.last else intersperse(a.tail: _*)
+    }
+
+    val idxPopData = if (hasLabel && hasPopData) 1 else 0
+    val idxPopFlag = if (hasLabel && hasPopFlag) idxPopData + 1 else 0
+    val pre = 0 + (if (hasLabel) 1 else 0) + (if (hasPopData) 1 else 0) + (if (hasPopFlag) 1 else 0)
+
+    val inds = if (oneRowPerInd) data else data.grouped(ploidy).map(indRows => indRows.head.take(pre) ++ intersperse(indRows.map(l => l.slice(pre, pre + numLoci).toList): _*)).toSeq
+    inds.zipWithIndex.map { case (rd, i) =>
+      StructureRecord(if (hasLabel) rd.head else i.toString,
+        if (hasPopData) rd(idxPopData).toInt else 0,
+        if (hasPopFlag && rd(idxPopFlag) == "0") false else true,
+        rd.slice(pre, pre + ploidy * numLoci).map(_.toInt))
+    }
+  }
+
+  def str2mat(data: Seq[StructureRecord], ploidy: Int=2, numLoci: Int=5) : Seq[DenseMatrix[Int]] = {
+    val raw = data.foldLeft(Array():Array[Int])((c, e) => c ++ e.genotype.toArray)
+    val ma = new DenseMatrix[Int](data.length, numLoci*2, raw, offset = 0, majorStride = ploidy*numLoci, isTranspose = true)
+    val ma2 = (1 to ploidy).map(m=> ma(::, (0 until numLoci).map(_ * ploidy + m - 1)).toDenseMatrix)
+    val reps = (0 until numLoci).map(l => ma2.map(_(::,l).toArray).reduceLeft(_ ++ _).distinct.zipWithIndex.toMap)
+    ma2.foreach(m =>
+      m.foreachKey { case (i, j) =>
+        m.update(i, j, reps(j)(m(i, j)))
+      }
+    )
+    ma2
+  }
+
+  def main2(args: Array[String]): Unit = {
     val n = 200
     val k = 4
     val loci = 7
-    val burnIn = 10000
+    val burnIn = 20000
     val thin = 1
-    val iterations = 20000
+    val iterations = 40000
     val alpha = 1.0
 
     // Simulate data
@@ -35,7 +86,7 @@ object AdmixtureModel {
     println(qMCMC)
   }
 
-  def simulateData(n: Int, k: Int, loci: Int, alpha: Double = 1.0, nAlleles: Option[Seq[Int]] = None): (DenseMatrix[Int], Seq[DenseMatrix[Double]], DenseMatrix[Double], DenseMatrix[Int], Seq[Int]) = {
+  def simulateData(n: Int, k: Int, loci: Int, alpha: Double = 1.0, nAlleles: Option[Seq[Int]] = None, ploidy: Int = 2): (Seq[DenseMatrix[Int]], Seq[DenseMatrix[Double]], DenseMatrix[Double], Seq[DenseMatrix[Int]], Seq[Int]) = {
     val numAlleles = nAlleles match {
       case Some(nA) => nA
       case None => Seq.fill(loci)(rand.randInt(5).sample() + 2)
@@ -43,28 +94,32 @@ object AdmixtureModel {
     val p = numAlleles.map(na => dirichlets(k, DenseVector.ones[Double](na)))
     val q = dirichlets(n, DenseVector.zeros[Double](k) +:+ alpha)
 
-    val Z = (0 until loci).map(l => multinomials(q).t).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
+    val Z = Seq.fill(ploidy) {
+      (0 until loci).map(l => multinomials(q).t).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
+    }
 
-    val X =
+    val X = Z.map(z =>
       (0 until loci).map(l => {
-        val params = p(l)(Z(::, l).toScalaVector, ::).toDenseMatrix
+        val params = p(l)(z(::, l).toScalaVector, ::).toDenseMatrix
         multinomials(params).t
       }).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
-
+    )
     (Z, p, q, X, numAlleles)
   }
 
-  def runMCMC(X: DenseMatrix[Int], k: Int, iterations: Int, burnIn: Int, thin: Int): State = {
-    val (n, loci) = (X.rows, X.cols)
-    val numAlleles = (0 until loci).map(l => X(::, l).toArray.max + 1)
-    val z0 =
+  def runMCMC(X: Seq[DenseMatrix[Int]], k: Int, iterations: Int, burnIn: Int, thin: Int): State = {
+    val (n, loci) = (X.head.rows, X.head.cols)
+    val numAlleles = (0 until loci).map(l => X.map(x => x(::, l).toArray).reduce(_ ++ _).max + 1)
+    println(numAlleles)
+    val z0 = Seq.fill(X.length) {
       numAlleles.map(j => multinomials(DenseMatrix.ones[Double](1, k) /:/ k.toDouble, n)).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
+    }
 
-    val initial = zeroState(n, k, loci, numAlleles).copy(z = z0, alpha = 1.0)
-    val average = zeroState(n, k, loci, numAlleles)
+    val initial = zeroState(n, k, loci, numAlleles, X.length).copy(z = z0, alpha = 1.0)
+    val average = zeroState(n, k, loci, numAlleles, X.length)
     val (_, expectedStage) = (1 to iterations).foldOrStop((initial, average)) { case ((current, average), i) => {
       val np = updateP(k, current.z, X, numAlleles)
-      val nq = updateQ(current.alpha, n, k, current.z)
+      val nq = if(i % 20 != 0) updateQ(current.alpha, n, k, current.z) else updateQMetro(current.q, np, X, current.alpha, n, k)
       val nz = updateZ(np, nq, X)
       val nalpha = updateAlpha(current.alpha, nq, n, k)
       val updated = State(nz, np, nq, nalpha)
@@ -79,57 +134,95 @@ object AdmixtureModel {
     expectedStage / ((iterations - burnIn) / thin)
   }
 
-  def updateZ(p: Seq[DenseMatrix[Double]], q: DenseMatrix[Double], x: DenseMatrix[Int]): DenseMatrix[Int] = {
-    p.indices.map(l => {
-      val s = ((p(l).t)(x(::, l).toScalaVector, ::)).toDenseMatrix
-      val r = q *:* s
-      val nr = r(::, *) /:/ sum(r(*, ::))
-      multinomials(nr).t
-    }).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
+  def updateZ(p: Seq[DenseMatrix[Double]], q: DenseMatrix[Double], X: Seq[DenseMatrix[Int]]): Seq[DenseMatrix[Int]] = {
+    X.map(x =>
+      p.indices.map(l => {
+        //P: k x numAlleles(l) X: n x l
+        val s = ((p(l).t)(x(::, l).toScalaVector, ::)).toDenseMatrix
+        val r = q *:* s
+        val nr = r(::, *) /:/ sum(r(*, ::))
+        multinomials(nr).t
+      }).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
+    )
   }
 
-  def updateP(k: Int, z: DenseMatrix[Int], x: DenseMatrix[Int], numAlleles: Seq[Int]): Seq[DenseMatrix[Double]] = {
+  def updateP(k: Int, Z: Seq[DenseMatrix[Int]], X: Seq[DenseMatrix[Int]], numAlleles: Seq[Int]): Seq[DenseMatrix[Double]] = {
     numAlleles.indices.map(l => {
       val d1s = DenseMatrix.ones[Double](k, numAlleles(l))
-      z(::, l).toArray.zip(x(::, l).toArray).foreach { case (ze, xe) => d1s.update(ze, xe, d1s(ze, xe) + 1.0)}
+      Z.zip(X).foreach { case (z, x) => z(::, l).toArray.zip(x(::, l).toArray).foreach { case (ze, xe) => d1s.update(ze, xe, d1s(ze, xe) + 1.0) } }
       dirichlets(d1s)
     })
   }
 
-  def updateQ(alpha: Double, n: Int, k: Int, z: DenseMatrix[Int]): DenseMatrix[Double] = {
+  def updateQ(alpha: Double, n: Int, k: Int, Z: Seq[DenseMatrix[Int]]): DenseMatrix[Double] = {
     val d1s = DenseMatrix.zeros[Double](n, k) +:+ alpha
-    (0 until n).foreach(i => z(i, ::).t.toArray.foreach(ki => d1s.update(i, ki, d1s(i, ki) + 1.0)))
+    (0 until n).foreach(i => Z.flatMap(z => z(i, ::).t.toArray).foreach(ki => d1s.update(i, ki, d1s(i, ki) + 1.0)))
     dirichlets(d1s)
+  }
+
+  def updateQMetro(q: DenseMatrix[Double], p: Seq[DenseMatrix[Double]], X: Seq[DenseMatrix[Int]], alpha: Double, n: Int, k: Int): DenseMatrix[Double] = {
+    val testQ = dirichlets(n, DenseVector.zeros[Double](k) +:+ alpha)
+    val rv = DenseVector.rand[Double](n)
+    val ql = individualLikelihood(q, p, X)
+    val tl = individualLikelihood(testQ, p, X)
+    val diff = tl - ql
+    val accept = rv <:< exp(diff)
+    val newQ = q.copy
+    accept.mapActivePairs { (i, _) =>
+      newQ(i, ::) := testQ(i, ::)
+      0
+    }
+    println(s"UpdateQMetro rate: ${accept.activeSize.toDouble/n}")
+    newQ
+  }
+
+  def individualLikelihood(q: DenseMatrix[Double], p: Seq[DenseMatrix[Double]], X: Seq[DenseMatrix[Int]]): DenseVector[Double] = {
+    val uf: Double = math.sqrt(1.0e-100)
+    val nn = X.map(x => p.indices.map(l => {
+      val s = ((p(l).t)(x(::, l).toScalaVector, ::)).toDenseMatrix
+      val r = q *:* s
+      sum(r(*, ::)).toDenseMatrix.t
+    }).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
+    nn(nn <:< uf) := uf
+    val lnn = log(nn)
+    sum(lnn(*, ::))
   }
 
   def updateAlpha(alpha: Double, q: DenseMatrix[Double], n: Int, k: Int): Double = {
     val cAlpha = Gaussian(alpha, 0.05).draw()
-    if (cAlpha < 10 && cAlpha > 0){
+    if (cAlpha < 10 && cAlpha > 0) {
       val rv = Uniform(0.0, 1.0).draw()
-      val thresh = math.exp(logProbQ(cAlpha, q, n, k) - logProbQ(alpha, q, n, k))
-      println(f"$thresh%10f $cAlpha%.2f $rv%.10f $alpha%.2f")
-      if( rv< thresh) cAlpha else alpha
-    }else alpha
+      val thresh = math.exp(logProbQ(cAlpha, q, n.toDouble, k.toDouble) - logProbQ(alpha, q, n.toDouble, k.toDouble))
+      //println(f"$thresh%10f $cAlpha%.2f $rv%.10f $alpha%.2f")
+      if (rv < thresh) cAlpha else alpha
+    } else alpha
   }
 
-  def logProbQ(alpha: Double, q: DenseMatrix[Double], n: Int, k: Int): Double = {
-    val uf: Double = 1.0e-200
-    val (sum, runningTotal) = q.t.toArray.foldLeft((0.0, 1.0)) {
+  def logProbQ(alpha: Double, q: DenseMatrix[Double], n: Double, k: Double): Double = {
+    val uf: Double = math.sqrt(1.0e-100)
+    val (sum, runningTotal) = q.toArray.foldLeft((0.0, 1.0)) {
       case ((sum, runningTotal), v) => {
-        val nr = runningTotal * (if (v > uf) v else uf)
-        if (nr < uf)
+        val nr = runningTotal * (if (v > uf) v else {
+          uf
+        })
+        if (nr < uf) {
+          //print("*")
           (sum + (alpha - 1.0) * math.log(nr), 1.0)
-        else
+        } else
           (sum, nr)
       }
     }
-    sum + (alpha - 1.0) * math.log(runningTotal) + (lnGamma(k * alpha) - k * lnGamma(alpha)) * n
+    val fsum = sum + (alpha - 1.0) * math.log(runningTotal) + (lnGamma(k * alpha) - k * lnGamma(alpha)) * n
+    //println(sum)
+    fsum
   }
 
-  def zeroState(n: Int, k: Int, loci: Int, numAlleles: Seq[Int]): State = {
+  def zeroState(n: Int, k: Int, loci: Int, numAlleles: Seq[Int], ploidy: Int): State = {
     State(
-      DenseMatrix.zeros[Int](n, loci)
-    , numAlleles.map(nl => DenseMatrix.zeros[Double](k, nl)), DenseMatrix.ones[Double](n, k) /:/ k.toDouble, 0.0f)
+      Seq.fill(ploidy) {
+        DenseMatrix.zeros[Int](n, loci)
+      }
+      , numAlleles.map(nl => DenseMatrix.zeros[Double](k, nl)), DenseMatrix.ones[Double](n, k) /:/ k.toDouble, 0.0f)
   }
 
   def rmse(a: DenseMatrix[Double], b: DenseMatrix[Double]): Double = {
@@ -138,13 +231,13 @@ object AdmixtureModel {
     math.sqrt(sum(diff *:* diff) / (a.rows * a.cols))
   }
 
-  case class State(z: DenseMatrix[Int], p: Seq[DenseMatrix[Double]], q: DenseMatrix[Double], alpha: Double) {
+  case class State(z: Seq[DenseMatrix[Int]], p: Seq[DenseMatrix[Double]], q: DenseMatrix[Double], alpha: Double) {
     def +(other: State): State = {
-      State(this.z + other.z, this.p.zip(other.p).map { case (a, b) => a + b }, this.q + other.q, this.alpha + other.alpha)
+      State(this.z.zip(other.z).map { case (a, b) => a + b }, this.p.zip(other.p).map { case (a, b) => a + b }, this.q + other.q, this.alpha + other.alpha)
     }
 
     def /(den: Double): State = {
-      State(this.z /:/ den.toInt, this.p.map(a => a /:/ den), this.q /:/ den, this.alpha / den)
+      State(Seq(), this.p.map(a => a /:/ den), this.q /:/ den, this.alpha / den)
     }
   }
 }
