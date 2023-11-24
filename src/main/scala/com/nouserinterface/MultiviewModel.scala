@@ -1,29 +1,26 @@
 package com.nouserinterface
 
 import breeze.io.CSVReader
-import breeze.linalg._
+import breeze.linalg.{sum, _}
 import breeze.math.Ring.ringFromField
 import breeze.numerics.{exp, log}
 import breeze.stats.distributions._
 import breeze.stats.mean
 import com.nouserinterface.Distributions._
-import com.nouserinterface.Simulator.simulateData
 import com.nouserinterface.Trainer.FancyIterable
 
 import java.io.{FileInputStream, InputStreamReader}
 
-object AdmixtureModel {
+object MultiviewModel {
   implicit val rand: RandBasis = RandBasis.systemSeed
+
   def main(args: Array[String]): Unit = {
-    val Z, p, q, X, numAlleles = simulateData(200, 2, 5)
-
-
     // simulated microsatellite data with 200 diploid individuals from 2 populations;
     // LABEL=1, POPDATA=1, POPFLAG=1, NUMLOCI=5, PLOIDY=2, MISSING=-999, ONEROWPERIND=0.
     val mat = CSVReader.read(new InputStreamReader(new FileInputStream(s"data/testdata1.txt")), ' ', '"', '\\')
     val test = StructureRecord.readStructureInput(mat)
     val xs = StructureRecord.str2mat(test)
-    val State(_, pMCMC, qMCMC, alphaMCMC) = AdmixtureModel.runMCMC(xs, 2, 20000, 10000, 1)
+    val State(_, pMCMC, qMCMC, alphaMCMC) = MultiviewModel.runMCMC(xs, 2, 20000, 10000, 1)
 
     println(qMCMC.toString(500))
   }

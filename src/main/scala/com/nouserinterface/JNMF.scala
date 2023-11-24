@@ -52,7 +52,7 @@ object Trainer {
       while (ii.hasNext) {
         val x = ii.next
         val nb = f(b, x)
-        if (nb == None) return b
+        if (nb.isEmpty) return b
         b = nb.getOrElse(b)
       }
       b
