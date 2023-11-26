@@ -1,5 +1,5 @@
 package com.nouserinterface
-
+/*
 import org.apache.spark.ml.linalg.DenseVector
 import org.apache.spark.ml.linalg.SparseVector
 import org.apache.spark.ml.linalg.Vector
@@ -32,3 +32,4 @@ object BreezeConverters {
       case sv: BSV[Double] => fromBreeze(sv)
     }
 }
+*/

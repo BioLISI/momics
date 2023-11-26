@@ -8,35 +8,56 @@ import breeze.stats.distributions._
 import breeze.stats.mean
 import com.nouserinterface.Distributions._
 import com.nouserinterface.Trainer.FancyIterable
+import scala.io.Source
+
 
 import java.io.{FileInputStream, InputStreamReader}
 
 object MultiviewModel {
   implicit val rand: RandBasis = RandBasis.systemSeed
 
-  def main(args: Array[String]): Unit = {
-    // simulated microsatellite data with 200 diploid individuals from 2 populations;
-    // LABEL=1, POPDATA=1, POPFLAG=1, NUMLOCI=5, PLOIDY=2, MISSING=-999, ONEROWPERIND=0.
-    val mat = CSVReader.read(new InputStreamReader(new FileInputStream(s"data/testdata1.txt")), ' ', '"', '\\')
-    val test = StructureRecord.readStructureInput(mat)
-    val xs = StructureRecord.str2mat(test)
-    val State(_, pMCMC, qMCMC, alphaMCMC) = MultiviewModel.runMCMC(xs, 2, 20000, 10000, 1)
+  def readFileAsCSCMatrix(filePath: String): CSCMatrix[Int] = {
+    val rows = Source.fromFile(filePath).getLines()
+    
+    val data = rows.flatMap { line =>
+      val splitLine = line.trim.split(" ")
+      val docSize = splitLine.head.toInt
+      splitLine.tail.map { termCount =>
+        val Array(term, count) = termCount.split(":")
+        (term.toInt - 1, count.toInt)
+      }
+    }.toSeq
 
-    println(qMCMC.toString(500))
+    val numRows = data.size
+    val numCols = data.maxBy(_._1)._1 + 1
+    val builder = new CSCMatrix.Builder[Int](numRows, numCols)
+    data.zipWithIndex.foreach{ case((term, count), rowIndex) =>
+      builder.add(rowIndex, term, count)
+    }
+    builder.result()
   }
 
-  def runMCMC(X: Seq[DenseMatrix[Int]], k: Int, iterations: Int, burnIn: Int, thin: Int): State = {
-    val (n, loci) = (X.head.rows, X.head.cols)
-    val numAlleles = (0 until loci).map(l => X.map(x => x(::, l).toArray).reduce(_ ++ _).max + 1)
-    println(numAlleles)
-    val z0 = Seq.fill(X.length) {
-      numAlleles.map(j => multinomials(DenseMatrix.ones[Double](1, k) /:/ k.toDouble, n)).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
-    }
+  def main(args: Array[String]): Unit = {
+    val mat = readFileAsCSCMatrix("data/ap/ap.dat")
+    val State(_, pMCMC, qMCMC, alphaMCMC) = MultiviewModel.runMCMC(Seq(mat), 10, 20000, 10000, 1)
 
-    val initial = zeroState(n, k, loci, numAlleles, X.length).copy(z = z0, alpha = 1.0)
-    val average = zeroState(n, k, loci, numAlleles, X.length)
+    //println(qMCMC.toString(500))
+    println(mat)
+  }
+
+  def runMCMC(X: Seq[CSCMatrix[Int]], k: Int, iterations: Int, burnIn: Int, thin: Int): State = {
+    val n = X.head.rows
+    val avgLength = X.map(x => x * DenseVector.ones[Int](x.cols))
+    
+    println(numTerms)
+    val z0 = X.map(x=> 
+      multinomials(DenseMatrix.ones[Double](x.cols, k) /:/ k.toDouble, n)
+    )
+
+    val initial = zeroState(n, k, numTerms, X.length).copy(z = z0, alpha = 1.0)
+    val average = zeroState(n, k, numTerms, X.length)
     val (_, expectedStage) = (1 to iterations).foldOrStop((initial, average)) { case ((current, average), i) => {
-      val np = updateP(k, current.z, X, numAlleles)
+      val np = updateP(k, current.z, X, numTerms)
       val nq = if(i % 20 != 0) updateQ(current.alpha, n, k, current.z) else updateQMetro(current.q, np, X, current.alpha, n, k)
       val nz = updateZ(np, nq, X)
       val nalpha = updateAlpha(current.alpha, nq, n, k)
@@ -64,10 +85,14 @@ object MultiviewModel {
     )
   }
 
-  def updateP(k: Int, Z: Seq[DenseMatrix[Int]], X: Seq[DenseMatrix[Int]], numAlleles: Seq[Int]): Seq[DenseMatrix[Double]] = {
-    numAlleles.indices.map(l => {
-      val d1s = DenseMatrix.ones[Double](k, numAlleles(l))
-      Z.zip(X).foreach { case (z, x) => z(::, l).toArray.zip(x(::, l).toArray).foreach { case (ze, xe) => d1s.update(ze, xe, d1s(ze, xe) + 1.0) } }
+  def updateP(k: Int, Z: Seq[DenseMatrix[Int]], X: Seq[CSCMatrix[Int]], numTerms: Seq[Int]): Seq[DenseMatrix[Double]] = {
+    numTerms.map(l => {
+      val d1s = DenseMatrix.ones[Double](k, l)
+      Z.zip(X).foreach { case (z, x) => 
+        x.foreachPair { case ((row:Int, col:Int), value:Int) => 
+          d1s.update(z(row, col), value, d1s(z(row, col), value) + 1.0) 
+        }
+      }
       dirichlets(d1s)
     })
   }
@@ -78,7 +103,7 @@ object MultiviewModel {
     dirichlets(d1s)
   }
 
-  def updateQMetro(q: DenseMatrix[Double], p: Seq[DenseMatrix[Double]], X: Seq[DenseMatrix[Int]], alpha: Double, n: Int, k: Int): DenseMatrix[Double] = {
+  def updateQMetro(q: DenseMatrix[Double], p: Seq[DenseMatrix[Double]], X: Seq[CSCMatrix[Int]], alpha: Double, n: Int, k: Int): DenseMatrix[Double] = {
     val testQ = dirichlets(n, DenseVector.zeros[Double](k) +:+ alpha)
     val rv = DenseVector.rand[Double](n)
     val ql = individualLikelihood(q, p, X)
@@ -94,8 +119,9 @@ object MultiviewModel {
     newQ
   }
 
-  def individualLikelihood(q: DenseMatrix[Double], p: Seq[DenseMatrix[Double]], X: Seq[DenseMatrix[Int]]): DenseVector[Double] = {
+  def individualLikelihood(q: DenseMatrix[Double], p: Seq[DenseMatrix[Double]], X: Seq[CSCMatrix[Int]]): DenseVector[Double] = {
     val uf: Double = math.sqrt(1.0e-100)
+    
     val nn = X.map(x => p.indices.map(l => {
       val s = ((p(l).t)(x(::, l).toScalaVector, ::)).toDenseMatrix
       val r = q *:* s
@@ -135,11 +161,12 @@ object MultiviewModel {
     fsum
   }
 
-  def zeroState(n: Int, k: Int, loci: Int, numAlleles: Seq[Int], ploidy: Int): State = {
+  def zeroState(n: Int, k: Int, numAlleles: Seq[Int], ploidy: Int): State = {
     State(
-      Seq.fill(ploidy) {
+      numAlleles.map(loci =>
+      
         DenseMatrix.zeros[Int](n, loci)
-      }
+      )
       , numAlleles.map(nl => DenseMatrix.zeros[Double](k, nl)), DenseMatrix.ones[Double](n, k) /:/ k.toDouble, 0.0f)
   }
 

@@ -4,6 +4,7 @@ import breeze.io.{CSVReader, CSVWriter}
 import breeze.linalg.DenseMatrix
 
 import java.io.{FileInputStream, InputStreamReader}
+import scala.sys.SystemProperties
 
 /**
  * @author ${user.name}
@@ -11,6 +12,16 @@ import java.io.{FileInputStream, InputStreamReader}
 object App {
 
   def main(args: Array[String]): Unit = {
+    println("Hi you, super fast, from anywhere?! right? right? is it slow because this is the first time?")
+    val t = new SystemProperties
+    println(t("dev.ludovic.netlib.lapack.nativeLibPath"))
+    val ma = DenseMatrix.rand[Double](200, 200)
+    val ma2 = DenseMatrix.rand[Double](200, 200)
+    val ma3 = ma * ma2
+    println(ma3)
+  }
+
+  def maina(args: Array[String]): Unit = {
     val ctypes = Seq("aml", "breast", "colon", "gbm", "kidney", "liver", "lung", "melanoma", "ovarian", "sarcoma")
     val omics = Seq("exp", "methy", "mirna")
     println(ctypes.mkString(","))
