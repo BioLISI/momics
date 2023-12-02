@@ -1,6 +1,7 @@
 package com.nouserinterface
 
 import breeze.io.CSVReader
+import breeze.linalg.operators.HasOps.{impl_Op_InPlace_V_V_Double_OpSet, impl_Op_InPlace_V_V_Int_OpSet}
 import breeze.linalg.{sum, _}
 import breeze.math.Ring.ringFromField
 import breeze.numerics.{exp, log}
@@ -8,9 +9,8 @@ import breeze.stats.distributions._
 import breeze.stats.mean
 import com.nouserinterface.Distributions._
 import com.nouserinterface.Trainer.FancyIterable
+
 import scala.io.Source
-
-
 import java.io.{FileInputStream, InputStreamReader}
 
 object MultiviewModel {
@@ -47,8 +47,8 @@ object MultiviewModel {
 
   def runMCMC(X: Seq[CSCMatrix[Int]], k: Int, iterations: Int, burnIn: Int, thin: Int): State = {
     val n = X.head.rows
-    val avgLength = X.map(x => x * DenseVector.ones[Int](x.cols))
-    
+
+    val avgTerms = X.map(x => sum(x * DenseVector.ones[Int](x.cols)).toDouble/x.rows)
     println(numTerms)
     val z0 = X.map(x=> 
       multinomials(DenseMatrix.ones[Double](x.cols, k) /:/ k.toDouble, n)

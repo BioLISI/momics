@@ -1,45 +1,13 @@
 package com.nouserinterface
 
-import breeze.linalg.operators.HasOps.{impl_Op_InPlace_V_V_Double_OpSet, m_m_UpdateOp_Double_OpSet}
-import breeze.linalg.{DenseMatrix, DenseVector, csvwrite}
-import breeze.stats.distributions.{Bernoulli, Density, Gaussian, Multinomial, Poisson, Rand, RandBasis}
-import com.nouserinterface.Distributions.{dirichlets, multinomials}
+import breeze.linalg.{DenseMatrix,  csvwrite}
+import breeze.stats.distributions.{Bernoulli, Gaussian, Poisson, Rand, RandBasis}
 
 import java.io.File
 import scala.util.Random
 
 object Simulator {
   implicit val rand: RandBasis = RandBasis.systemSeed
-
-  def generateMultinomialMatrix(n: Int, k: Int, s: Double = 1.0, ns: Double=0.01): DenseMatrix[Double] = {
-    val samples = multinomials(DenseMatrix.ones[Double](1, k) /:/ k.toDouble, n).toArray
-    DenseMatrix.tabulate(n, k) { (i, j) =>
-      if (samples(i) == j) s else ns
-    }
-  }
-
-  def simulateData(n: Int, k: Int, loci: Int, alpha: Double = 1.0, nAlleles: Option[Seq[Int]] = None, ploidy: Int = 2): (Seq[DenseMatrix[Int]], Seq[DenseMatrix[Double]], DenseMatrix[Double], Seq[DenseMatrix[Int]], Seq[Int]) = {
-    val numAlleles = nAlleles match {
-      case Some(nA) => nA
-      case None => Seq.fill(loci)(rand.randInt(5).sample() + 2)
-    }
-    val p = numAlleles.map(na => dirichlets(k, DenseVector.ones[Double](na)))
-    val qParams = generateMultinomialMatrix(n, k)
-    val q = dirichlets(qParams)
-
-    val Z = Seq.fill(ploidy) {
-      (0 until loci).map(l => multinomials(q).t).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
-    }
-
-    val X = Z.map(z =>
-      (0 until loci).map(l => {
-        val params = p(l)(z(::, l).toScalaVector, ::).toDenseMatrix
-        multinomials(params).t
-      }).reduceLeft((a, b) => DenseMatrix.horzcat(a, b))
-    )
-    val normalCopyNumber = Gaussian(0, 1)
-    (Z, p, q, X, numAlleles)
-  }
 
   sealed abstract class OmicSample(dist: Rand[Double]) {
     def dist(): Rand[Double] = dist
@@ -122,7 +90,7 @@ object Simulator {
     generatedData.foreach { case (omicType, matrix) =>
       println(s"$omicType:")
       println(matrix.mapValues(v => f"$v%.1f").toString())
-      csvwrite(new File(s"data/generated/$omicType"), matrix)
+      csvwrite(new File(s"data/generated2/$omicType"), matrix)
     }
   }
 }
