@@ -7,7 +7,7 @@ import breeze.numerics.{exp, log}
 import breeze.stats.distributions._
 import breeze.stats.mean
 import com.nouserinterface.Distributions._
-import com.nouserinterface.Simulator.simulateData
+import com.nouserinterface.SimpleSimulator.simulateData
 import com.nouserinterface.Trainer.FancyIterable
 
 import java.io.{FileInputStream, InputStreamReader}

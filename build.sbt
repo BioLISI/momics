@@ -8,6 +8,10 @@ libraryDependencies += "org.scala-lang" % "scala-library" % "2.13.11" % "compile
 
 libraryDependencies += "org.scalanlp" % "breeze_2.13" % "2.1.0" % "compile"
 
+libraryDependencies += "org.ojalgo" % "ojalgo" % "53.1.0" % "compile"
+
+libraryDependencies += "nz.ac.waikato.cms.weka" % "weka-stable" % "3.8.6"  % "compile"
+
 //dependencyOverrides += "dev.ludovic.netlib" % "blas" % "3.0.3"
 //dependencyOverrides += "dev.ludovic.netlib" % "lapack" % "3.0.3"
 //dependencyOverrides += "dev.ludovic.netlib" % "arpack" % "3.0.3"

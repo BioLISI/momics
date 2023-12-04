@@ -6,7 +6,7 @@ import com.nouserinterface.Distributions.{dirichlets, multinomials}
 
 import scala.collection.immutable.Seq
 
-class SimpleSimulator {
+object SimpleSimulator {
   implicit val rand: RandBasis = RandBasis.systemSeed
   def generateMultinomialMatrix(n: Int, k: Int, s: Double = 1.0, ns: Double = 0.01): DenseMatrix[Double] = {
     val samples = multinomials(DenseMatrix.ones[Double](1, k) /:/ k.toDouble, n).toArray

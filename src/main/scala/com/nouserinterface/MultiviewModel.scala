@@ -14,6 +14,7 @@ import scala.io.Source
 import java.io.{FileInputStream, InputStreamReader}
 
 object MultiviewModel {
+  /*
   implicit val rand: RandBasis = RandBasis.systemSeed
 
   def readFileAsCSCMatrix(filePath: String): CSCMatrix[Int] = {
@@ -49,15 +50,15 @@ object MultiviewModel {
     val n = X.head.rows
 
     val avgTerms = X.map(x => sum(x * DenseVector.ones[Int](x.cols)).toDouble/x.rows)
-    println(numTerms)
+    println(avgTerms)
     val z0 = X.map(x=> 
       multinomials(DenseMatrix.ones[Double](x.cols, k) /:/ k.toDouble, n)
     )
 
-    val initial = zeroState(n, k, numTerms, X.length).copy(z = z0, alpha = 1.0)
-    val average = zeroState(n, k, numTerms, X.length)
+    val initial = zeroState(n, k, avgTerms, X.length).copy(z = z0, alpha = 1.0)
+    val average = zeroState(n, k, avgTerms, X.length)
     val (_, expectedStage) = (1 to iterations).foldOrStop((initial, average)) { case ((current, average), i) => {
-      val np = updateP(k, current.z, X, numTerms)
+      val np = updateP(k, current.z, X, avgTerms)
       val nq = if(i % 20 != 0) updateQ(current.alpha, n, k, current.z) else updateQMetro(current.q, np, X, current.alpha, n, k)
       val nz = updateZ(np, nq, X)
       val nalpha = updateAlpha(current.alpha, nq, n, k)
@@ -185,4 +186,6 @@ object MultiviewModel {
       State(Seq(), this.p.map(a => a /:/ den), this.q /:/ den, this.alpha / den)
     }
   }
+
+   */
 }
